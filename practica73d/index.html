@@ -1,0 +1,710 @@
+<!DOCTYPE HTML>
+
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Visualizador 3D (con Texturas forzadas)</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin:0; padding:0; background:#f0f0f0; overflow:hidden; }
+    #container { display:flex; height:100vh; }
+    #canvas-container { flex:1; position:relative; }
+    #webglcanvas { width:100%; height:100%; display:block; }
+    #controls { width:300px; background:#2c3e50; color:#fff; padding:15px; overflow-y:auto; box-shadow:-2px 0 5px rgba(0,0,0,.2); }
+    .control-group { margin-bottom:20px; border-bottom:1px solid #34495e; padding-bottom:15px; }
+    .control-group h3 { margin-top:0; color:#3498db; font-size:16px; }
+    .control-row { display:flex; align-items:center; margin-bottom:10px; }
+    .control-label { width:120px; font-size:14px; }
+    .control-input { flex:1; }
+    input[type="range"]{width:100%}
+    input[type="color"]{ width:100%; height:30px; border:none; border-radius:3px;}
+    button{ background:#3498db; color:white; border:none; padding:8px 12px; border-radius:3px; cursor:pointer; width:100%; margin-top:5px;}
+    button:hover{background:#2980b9}
+    select{ width:100%; padding:5px; border-radius:3px; border:1px solid #34495e; background:#34495e; color:white;}
+    .checkbox-container{ display:flex; align-items:center;}
+    .info-text{ font-size:12px; color:#bdc3c7; margin-top:5px;}
+    #status { position:absolute; bottom:10px; left:10px; background:rgba(0,0,0,0.7); color:white; padding:5px 10px; border-radius:3px; font-size:12px; }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="canvas-container">
+      <canvas id="webglcanvas"></canvas>
+      <div id="status">Cargando modelos...</div>
+    </div>
+    <div id="controls">
+      <!-- (mantengo los controles iguales) -->
+      <div class="control-group">
+        <h3>Vista y Navegación</h3>
+        <div class="control-row"><div class="control-label">Tipo de Vista:</div><div class="control-input"><select id="vista"><option value="perspectiva">Perspectiva</option><option value="ortogonal">Ortogonal</option></select></div></div>
+        <div class="control-row"><div class="control-label">Zoom:</div><div class="control-input"><input type="range" id="zoom" min="1" max="20" value="8" step="0.1"></div></div>
+        <div class="control-row"><div class="control-label">Rotar Vista Y:</div><div class="control-input"><input type="range" id="rotarVistaX" min="-180" max="180" value="0"></div></div>
+        <div class="control-row"><div class="control-label">Rotar Vista X:</div><div class="control-input"><input type="range" id="rotarVistaY" min="-180" max="180" value="0"></div></div>
+        <div class="info-text">Usa las flechas para mover la vista</div>
+      </div>
+      <div class="control-group">
+        <h3>Objeto Seleccionado</h3>
+        <div class="control-row"><div class="control-label">Objeto:</div><div class="control-input"><select id="objetoSeleccionado"><option value="todos">Todos los Objetos</option><option value="auto">Auto</option><option value="gato">Gato</option><option value="pinguino">Pingüino</option></select></div></div>
+        <div class="control-row"><div class="control-label">Posición X:</div><div class="control-input"><input type="range" id="posX" min="-3" max="3" value="0" step="0.1"></div></div>
+        <div class="control-row"><div class="control-label">Posición Y:</div><div class="control-input"><input type="range" id="posY" min="-3" max="3" value="0" step="0.1"></div></div>
+        <div class="control-row"><div class="control-label">Rotación Y:</div><div class="control-input"><input type="range" id="rotX" min="0" max="360" value="0"></div></div>
+        <div class="control-row"><div class="control-label">Rotación Z:</div><div class="control-input"><input type="range" id="rotY" min="0" max="360" value="0"></div></div>
+        <div class="control-row"><div class="control-label">Rotación X:</div><div class="control-input"><input type="range" id="rotZ" min="0" max="360" value="0"></div></div>
+        <div class="control-row"><div class="control-label">Escala:</div><div class="control-input"><input type="range" id="escala" min="0.1" max="3" value="1" step="0.1"></div></div>
+        <button id="resetObjeto">Reiniciar Objeto</button>
+      </div>
+      <div class="control-group">
+        <h3>Apariencia</h3>
+        <div class="control-row"><div class="control-label">Color Auto:</div><div class="control-input"><input type="color" id="colorAuto" value="#ff0000"></div></div>
+        <div class="control-row"><div class="control-label">Color Gato:</div><div class="control-input"><input type="color" id="colorGato" value="#ff8800"></div></div>
+        <div class="control-row"><div class="control-label">Color Pingüino:</div><div class="control-input"><input type="color" id="colorPinguino" value="#1a1a1a"></div></div>
+        <div class="control-row"><div class="checkbox-container"><input type="checkbox" id="animacion"><label for="animacion">Animación Automática</label></div></div>
+        <div class="control-row"><div class="checkbox-container"><input type="checkbox" id="mostrarEjes" checked><label for="mostrarEjes">Mostrar Ejes</label></div></div>
+        <div class="control-row"><div class="checkbox-container"><input type="checkbox" id="usarColoresOriginales" checked><label for="usarColoresOriginales">Usar Colores Originales</label></div></div>
+      </div>
+      <div class="control-group">
+        <h3>Controles Rápidos</h3>
+        <button id="vistaFrontal">Vista Frontal</button>
+        <button id="vistaLateral">Vista Lateral</button>
+        <button id="vistaSuperior">Vista Superior</button>
+        <button id="resetTodo">Reiniciar Todo</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SHADERS -->
+
+  <script id="vs" type="vertex">
+    #version 300 es
+    precision mediump float;
+    uniform mat4 uMatrizProyeccion;
+    uniform mat4 uMatrizVista;
+    uniform mat4 uMatrizModelo;
+    layout(location = 0) in vec3 aVertices;
+    layout(location = 1) in vec2 aTexCoord;
+    out vec2 vTexCoord;
+    void main() {
+      vTexCoord = aTexCoord;
+      gl_Position = uMatrizProyeccion * uMatrizVista * uMatrizModelo * vec4(aVertices, 1.0);
+    }
+  </script>
+
+  <script id="fs" type="fragment">
+    #version 300 es
+    precision highp float;
+    in vec2 vTexCoord;
+    uniform sampler2D uSampler;
+    uniform vec4 uColor;
+    uniform int uUseTexture;
+    out vec4 color;
+    void main() {
+      if (uUseTexture == 1) {
+        vec4 t = texture(uSampler, vTexCoord);
+        color = t;
+      } else {
+        color = uColor;
+      }
+    }
+  </script>
+
+  <script>
+  "use strict";
+
+  let programaID, gl;
+  let objetoAuto, objetoGato, objetoPinguino;
+  let ejes;
+  let uColor, uMatrizProyeccion, uMatrizVista, uMatrizModelo, uSampler, uUseTexture;
+
+  let MatrizProyeccion = new Array(16);
+  let MatrizVista = new Array(16);
+  let MatrizModelo = new Array(16);
+  let MatrizModeloAuto = new Array(16);
+  let MatrizModeloGato = new Array(16);
+  let MatrizModeloPinguino = new Array(16);
+
+  let rotacionAuto = { x:0,y:0,z:0 }, rotacionGato={x:0,y:0,z:0}, rotacionPinguino={x:0,y:0,z:0};
+  let posicionAuto = {x:-2,y:0,z:0}, posicionGato={x:0,y:0,z:0}, posicionPinguino={x:2,y:0,z:0};
+  let escalaAuto=1.0, escalaGato=1.0, escalaPinguino=1.0;
+  let colorAuto=[1,0,0], colorGato=[1,0.53,0], colorPinguino=[0.1,0.1,0.1];
+  let rotacionVistaX=0, rotacionVistaY=0, zoom=8, tipoVista="perspectiva";
+  let animacionActiva=false, INC_ROTACION=0.5;
+  let objetoSeleccionado="todos", usarColoresOriginales=true;
+  let controles = {};
+
+  function toRadians(g){ return g*Math.PI/180; }
+  function identidad(r){ r[0]=1; r[4]=0; r[8]=0; r[12]=0; r[1]=0; r[5]=1; r[9]=0; r[13]=0; r[2]=0; r[6]=0; r[10]=1; r[14]=0; r[3]=0; r[7]=0; r[11]=0; r[15]=1;}
+  function multiplica(c,a,b){ let r=new Array(16); for(let i=0;i<4;i++){ for(let j=0;j<4;j++){ let s=0; for(let k=0;k<4;k++) s+=a[i+k*4]*b[k+j*4]; r[i+j*4]=s; }} for(let i=0;i<16;i++) c[i]=r[i];}
+  function traslacion(matriz,tx,ty,tz){ let r=new Array(16); r[0]=1;r[4]=0;r[8]=0;r[12]=tx; r[1]=0;r[5]=1;r[9]=0;r[13]=ty; r[2]=0;r[6]=0;r[10]=1;r[14]=tz; r[3]=0;r[7]=0;r[11]=0;r[15]=1; multiplica(matriz,matriz,r);}
+  function escalacion(matriz,sx,sy,sz){ let r=new Array(16); r[0]=sx;r[4]=0;r[8]=0;r[12]=0; r[1]=0;r[5]=sy;r[9]=0;r[13]=0; r[2]=0;r[6]=0;r[10]=sz;r[14]=0; r[3]=0;r[7]=0;r[11]=0;r[15]=1; multiplica(matriz,matriz,r);}
+  function rotacionX(matriz,theta){ let r=new Array(16); let c=Math.cos(toRadians(theta)), s=Math.sin(toRadians(theta)); r[0]=1;r[4]=0;r[8]=0;r[12]=0; r[1]=0;r[5]=c;r[9]=-s;r[13]=0; r[2]=0;r[6]=s;r[10]=c;r[14]=0; r[3]=0;r[7]=0;r[11]=0;r[15]=1; multiplica(matriz,matriz,r);}
+  function rotacionY(matriz,theta){ let r=new Array(16); let c=Math.cos(toRadians(theta)), s=Math.sin(toRadians(theta)); r[0]=c;r[4]=0;r[8]=s;r[12]=0; r[1]=0;r[5]=1;r[9]=0;r[13]=0; r[2]=-s;r[6]=0;r[10]=c;r[14]=0; r[3]=0;r[7]=0;r[11]=0;r[15]=1; multiplica(matriz,matriz,r);}
+  function rotacionZ(matriz,theta){ let r=new Array(16); let c=Math.cos(toRadians(theta)), s=Math.sin(toRadians(theta)); r[0]=c;r[4]=-s;r[8]=0;r[12]=0; r[1]=s;r[5]=c;r[9]=0;r[13]=0; r[2]=0;r[6]=0;r[10]=1;r[14]=0; r[3]=0;r[7]=0;r[11]=0;r[15]=1; multiplica(matriz,matriz,r);}
+  function ortho(r,izq,der,abj,arr,cerca,lejos){ r[0]=2/(der-izq); r[4]=0; r[8]=0; r[12]=-(der+izq)/(der-izq); r[1]=0; r[5]=2/(arr-abj); r[9]=0; r[13]=-(arr+abj)/(arr-abj); r[2]=0; r[6]=0; r[10]=-2/(lejos-cerca); r[14]=-(lejos+cerca)/(lejos-cerca); r[3]=0; r[7]=0; r[11]=0; r[15]=1;}
+  function perspective(r,fovy,aspecto,cerca,lejos){ let ang=fovy*0.5; let f=(Math.abs(Math.sin(toRadians(ang)))<1e-8?0:1)/Math.tan(toRadians(ang)); r[0]=f/aspecto; r[4]=0; r[8]=0; r[12]=0; r[1]=0; r[5]=f; r[9]=0; r[13]=0; r[2]=0; r[6]=0; r[10]=-(lejos+cerca)/(lejos-cerca); r[14]=-2.0*lejos*cerca/(lejos-cerca); r[3]=0; r[7]=0; r[11]=-1.0; r[15]=0; }
+
+  function inicializarControles() {
+    controles.vista = document.getElementById("vista");
+    controles.zoom = document.getElementById("zoom");
+    controles.rotarVistaX = document.getElementById("rotarVistaX");
+    controles.rotarVistaY = document.getElementById("rotarVistaY");
+    controles.objetoSeleccionado = document.getElementById("objetoSeleccionado");
+    controles.posX = document.getElementById("posX");
+    controles.posY = document.getElementById("posY");
+    controles.rotX = document.getElementById("rotX");
+    controles.rotY = document.getElementById("rotY");
+    controles.rotZ = document.getElementById("rotZ");
+    controles.escala = document.getElementById("escala");
+    controles.colorAuto = document.getElementById("colorAuto");
+    controles.colorGato = document.getElementById("colorGato");
+    controles.colorPinguino = document.getElementById("colorPinguino");
+    controles.animacion = document.getElementById("animacion");
+    controles.mostrarEjes = document.getElementById("mostrarEjes");
+    controles.usarColoresOriginales = document.getElementById("usarColoresOriginales");
+    controles.resetObjeto = document.getElementById("resetObjeto");
+    controles.vistaFrontal = document.getElementById("vistaFrontal");
+    controles.vistaLateral = document.getElementById("vistaLateral");
+    controles.vistaSuperior = document.getElementById("vistaSuperior");
+    controles.resetTodo = document.getElementById("resetTodo");
+
+    controles.vista.addEventListener("change", actualizarVista);
+    controles.zoom.addEventListener("input", actualizarZoom);
+    controles.rotarVistaX.addEventListener("input", actualizarRotacionVista);
+    controles.rotarVistaY.addEventListener("input", actualizarRotacionVista);
+    controles.objetoSeleccionado.addEventListener("change", cambiarObjetoSeleccionado);
+    controles.posX.addEventListener("input", actualizarPosicion);
+    controles.posY.addEventListener("input", actualizarPosicion);
+    controles.rotX.addEventListener("input", actualizarRotacion);
+    controles.rotY.addEventListener("input", actualizarRotacion);
+    controles.rotZ.addEventListener("input", actualizarRotacion);
+    controles.escala.addEventListener("input", actualizarEscala);
+    controles.colorAuto.addEventListener("input", actualizarColor);
+    controles.colorGato.addEventListener("input", actualizarColor);
+    controles.colorPinguino.addEventListener("input", actualizarColor);
+    controles.animacion.addEventListener("change", toggleAnimacion);
+    controles.mostrarEjes.addEventListener("change", dibujar);
+    controles.usarColoresOriginales.addEventListener("change", toggleColoresOriginales);
+    controles.resetObjeto.addEventListener("click", resetObjeto);
+    controles.vistaFrontal.addEventListener("click", () => cambiarVista('frontal'));
+    controles.vistaLateral.addEventListener("click", () => cambiarVista('lateral'));
+    controles.vistaSuperior.addEventListener("click", () => cambiarVista('superior'));
+    controles.resetTodo.addEventListener("click", resetTodo);
+
+    document.addEventListener("keydown", manejarTeclado);
+    actualizarControlesDesdeEstado();
+  }
+
+  function actualizarControlesDesdeEstado() {
+    controles.zoom.value = zoom;
+    controles.rotarVistaX.value = rotacionVistaX;
+    controles.rotarVistaY.value = rotacionVistaY;
+    controles.vista.value = tipoVista;
+    actualizarControlesObjeto();
+  }
+
+  function actualizarControlesObjeto() {
+    let posX,posY,rotX,rotY,rotZ,escala;
+    switch(objetoSeleccionado){
+      case "auto": posX=posicionAuto.x; posY=posicionAuto.y; rotX=rotacionAuto.x; rotY=rotacionAuto.y; rotZ=rotacionAuto.z; escala=escalaAuto; break;
+      case "gato": posX=posicionGato.x; posY=posicionGato.y; rotX=rotacionGato.x; rotY=rotacionGato.y; rotZ=rotacionGato.z; escala=escalaGato; break;
+      case "pinguino": posX=posicionPinguino.x; posY=posicionPinguino.y; rotX=rotacionPinguino.x; rotY=rotacionPinguino.y; rotZ=rotacionPinguino.z; escala=escalaPinguino; break;
+      default: posX=0; posY=0; rotX=0; rotY=0; rotZ=0; escala=1;
+    }
+    controles.posX.value = posX; controles.posY.value = posY; controles.rotX.value = rotX; controles.rotY.value = rotY; controles.rotZ.value = rotZ; controles.escala.value = escala;
+  }
+
+  // (UI helper functions same as before; omitted here for brevity in message but present in file)
+  function actualizarVista(){ tipoVista = controles.vista.value; configurarProyeccion(); dibujar(); }
+  function actualizarZoom(){ zoom = parseFloat(controles.zoom.value); configurarProyeccion(); dibujar(); }
+  function actualizarRotacionVista(){ rotacionVistaX = parseFloat(controles.rotarVistaX.value); rotacionVistaY = parseFloat(controles.rotarVistaY.value); configurarVista(); dibujar(); }
+  function cambiarObjetoSeleccionado(){ objetoSeleccionado = controles.objetoSeleccionado.value; actualizarControlesObjeto(); }
+  function actualizarPosicion(){ const x=parseFloat(controles.posX.value), y=parseFloat(controles.posY.value); switch(objetoSeleccionado){ case "auto": posicionAuto.x=x; posicionAuto.y=y; break; case "gato": posicionGato.x=x; posicionGato.y=y; break; case "pinguino": posicionPinguino.x=x; posicionPinguino.y=y; break; case "todos": posicionAuto.x=x; posicionAuto.y=y; posicionGato.x=x; posicionGato.y=y; posicionPinguino.x=x; posicionPinguino.y=y; break;} dibujar();}
+  function actualizarRotacion(){ const x=parseFloat(controles.rotX.value), y=parseFloat(controles.rotY.value), z=parseFloat(controles.rotZ.value); switch(objetoSeleccionado){ case "auto": rotacionAuto.x=x; rotacionAuto.y=y; rotacionAuto.z=z; break; case "gato": rotacionGato.x=x; rotacionGato.y=y; rotacionGato.z=z; break; case "pinguino": rotacionPinguino.x=x; rotacionPinguino.y=y; rotacionPinguino.z=z; break; case "todos": rotacionAuto.x=x; rotacionAuto.y=y; rotacionAuto.z=z; rotacionGato.x=x; rotacionGato.y=y; rotacionGato.z=z; rotacionPinguino.x=x; rotacionPinguino.y=y; rotacionPinguino.z=z; break;} dibujar();}
+  function actualizarEscala(){ const s=parseFloat(controles.escala.value); switch(objetoSeleccionado){ case "auto": escalaAuto=s; break; case "gato": escalaGato=s; break; case "pinguino": escalaPinguino=s; break; case "todos": escalaAuto=s; escalaGato=s; escalaPinguino=s; break;} dibujar();}
+  function actualizarColor(){ function hexToRgb(hex){ const r=/^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex); return r?[parseInt(r[1],16)/255, parseInt(r[2],16)/255, parseInt(r[3],16)/255]:[0,0,0];} colorAuto=hexToRgb(controles.colorAuto.value); colorGato=hexToRgb(controles.colorGato.value); colorPinguino=hexToRgb(controles.colorPinguino.value); dibujar();}
+  function toggleAnimacion(){ animacionActiva = controles.animacion.checked; }
+  function toggleColoresOriginales(){ usarColoresOriginales = controles.usarColoresOriginales.checked; dibujar();}
+  function resetObjeto(){ switch(objetoSeleccionado){ case "auto": rotacionAuto={x:0,y:0,z:0}; posicionAuto={x:-2,y:0,z:0}; escalaAuto=1.0; break; case "gato": rotacionGato={x:0,y:0,z:0}; posicionGato={x:0,y:0,z:0}; escalaGato=1.0; break; case "pinguino": rotacionPinguino={x:0,y:0,z:0}; posicionPinguino={x:2,y:0,z:0}; escalaPinguino=1.0; break; case "todos": rotacionAuto={x:0,y:0,z:0}; posicionAuto={x:-2,y:0,z:0}; escalaAuto=1.0; rotacionGato={x:0,y:0,z:0}; posicionGato={x:0,y:0,z:0}; escalaGato=1.0; rotacionPinguino={x:0,y:0,z:0}; posicionPinguino={x:2,y:0,z:0}; escalaPinguino=1.0; break;} actualizarControlesObjeto(); dibujar();}
+  function cambiarVista(tipo){ switch(tipo){ case 'frontal': rotacionVistaX=0; rotacionVistaY=0; break; case 'lateral': rotacionVistaX=0; rotacionVistaY=90; break; case 'superior': rotacionVistaX=90; rotacionVistaY=0; break;} controles.rotarVistaX.value=rotacionVistaX; controles.rotarVistaY.value=rotacionVistaY; configurarVista(); dibujar();}
+  function resetTodo(){ zoom=8; rotacionVistaX=0; rotacionVistaY=0; tipoVista="perspectiva"; rotacionAuto={x:0,y:0,z:0}; posicionAuto={x:-2,y:0,z:0}; escalaAuto=1.0; rotacionGato={x:0,y:0,z:0}; posicionGato={x:0,y:0,z:0}; escalaGato=1.0; rotacionPinguino={x:0,y:0,z:0}; posicionPinguino={x:2,y:0,z:0}; escalaPinguino=1.0; colorAuto=[1,0,0]; colorGato=[1,0.53,0]; colorPinguino=[0.1,0.1,0.1]; actualizarControlesDesdeEstado(); controles.colorAuto.value="#ff0000"; controles.colorGato.value="#ff8800"; controles.colorPinguino.value="#1a1a1a"; dibujar();}
+  function manejarTeclado(event){ const step=5, zoomStep=0.5; switch(event.key){ case "ArrowUp": rotacionVistaX=(rotacionVistaX-step)%360; break; case "ArrowDown": rotacionVistaX=(rotacionVistaX+step)%360; break; case "ArrowLeft": rotacionVistaY=(rotacionVistaY-step)%360; break; case "ArrowRight": rotacionVistaY=(rotacionVistaY+step)%360; break; case "PageUp": zoom=Math.min(20,zoom+zoomStep); break; case "PageDown": zoom=Math.max(1,zoom-zoomStep); break; default: return;} controles.rotarVistaX.value=rotacionVistaX; controles.rotarVistaY.value=rotacionVistaY; controles.zoom.value=zoom; configurarProyeccion(); configurarVista(); dibujar(); event.preventDefault();}
+
+  /***************************************************************************/
+  /* OBJ & MTL loader (igual que te pasé antes)                              */
+  /***************************************************************************/
+  class Grupo {
+    constructor(){ this.nombre="si_falta"; this.triangulos=[]; this.material= -1; }
+    setNombre(n){this.nombre=n;}
+    getNombre(){return this.nombre;}
+    adiTriangulo(t){this.triangulos.push(t);}
+    getTriangulo(i){return this.triangulos[i];}
+    getNumTriangulos(){return this.triangulos.length;}
+    setMaterial(m){this.material=m;}
+    getMaterial(){return this.material;}
+  }
+
+  class Material {
+    constructor(){ this.nombre="si_falta"; this.ambiente=[0.2,0.2,0.2]; this.difuso=[0.8,0.8,0.8]; this.especular=[0,0,0]; this.brillo=0; this.mapKd = null; this._glTexture = null; }
+    setNombre(n){this.nombre=n;}
+    getNombre(){return this.nombre;}
+    setAmbiente(a){this.ambiente=a;}
+    getAmbiente(){return this.ambiente;}
+    setDifuso(d){this.difuso=d;}
+    getDifuso(){return this.difuso;}
+    setEspecular(s){this.especular=s;}
+    getEspecular(){return this.especular;}
+    setBrillo(b){this.brillo=b;}
+    getBrillo(){return this.brillo;}
+  }
+
+  class Cadena {
+    constructor(c){ this.cadena=c; this.indice=0; }
+    esDelimitador(c){ return (c==' '||c=='\t'||c=='('||c==')'||c=='"'||c=="'"); }
+    saltaDelimitadores(){ let n=this.cadena.length; while(this.indice<n && this.esDelimitador(this.cadena.charAt(this.indice))) this.indice++; }
+    obtLongPalabra(inicio){ let i=inicio; while(i<this.cadena.length && !this.esDelimitador(this.cadena.charAt(i))) i++; return i-inicio; }
+    getToken(){ this.saltaDelimitadores(); let n=this.obtLongPalabra(this.indice); if(n===0) return null; let sub=this.cadena.substr(this.indice,n); this.indice += (n+1); return sub.trim(); }
+    getInt(){ let t=this.getToken(); return t?parseInt(t,10):null; }
+    getFloat(){ let t=this.getToken(); return t?parseFloat(t):null; }
+  }
+
+  class Objeto {
+    constructor(gl, nombreArchivo, colorPorDefecto){
+      this.vertices = []; this.uvs = []; this.normales = []; this.grupos = []; this.materiales = []; this.color = colorPorDefecto || [1,1,1];
+      this.posArray = []; this.uvArray = []; this.indexArrays = []; this.groupMaterials = [];
+      this.cargarObjeto(gl, nombreArchivo);
+      this._createGLBuffers(gl);
+    }
+
+    leeArchivo(nombreArchivo){
+      let request = new XMLHttpRequest();
+      request.open('GET', nombreArchivo, false);
+      request.send(null);
+      if (request.status === 404) return "";
+      return request.responseText;
+    }
+
+    lee_datos_archivo_mtl(nombreArchivoMTL){
+      let datos_mtl = this.leeArchivo("Modelos/" + nombreArchivoMTL);
+      if (!datos_mtl) return;
+      let lineas = datos_mtl.split('\n');
+      let token;
+      for (let i=0;i<lineas.length;i++){
+        let cad = new Cadena(lineas[i]);
+        token = cad.getToken();
+        if (token == null) continue;
+        switch(token){
+          case '#': continue;
+          case 'newmtl':
+            let nombreMaterial = cad.getToken();
+            let material = new Material();
+            material.setNombre(nombreMaterial);
+            this.materiales.push(material);
+            break;
+          case 'Ka':
+            let ambiente=[cad.getFloat(), cad.getFloat(), cad.getFloat()];
+            this.materiales[this.materiales.length-1].setAmbiente(ambiente);
+            break;
+          case 'Kd':
+            let dif=[cad.getFloat(), cad.getFloat(), cad.getFloat()];
+            this.materiales[this.materiales.length-1].setDifuso(dif);
+            break;
+          case 'Ks':
+            let spec=[cad.getFloat(), cad.getFloat(), cad.getFloat()];
+            this.materiales[this.materiales.length-1].setEspecular(spec);
+            break;
+          case 'Ns':
+            let brillo = cad.getFloat();
+            this.materiales[this.materiales.length-1].setBrillo(brillo);
+            break;
+          case 'map_Kd':
+            let map = cad.getToken();
+            if (map) this.materiales[this.materiales.length-1].mapKd = map.trim();
+            break;
+        }
+      }
+    }
+
+    cargarObjeto(gl, nombreArchivo){
+      let datos_obj = this.leeArchivo(nombreArchivo);
+      if (!datos_obj) { console.warn("OBJ vacío:", nombreArchivo); return; }
+      let lineas = datos_obj.split('\n');
+
+      let minX=Number.MAX_VALUE, maxX=Number.MIN_VALUE, minY=Number.MAX_VALUE, maxY=Number.MIN_VALUE, minZ=Number.MAX_VALUE, maxZ=Number.MIN_VALUE;
+      let numVertices = 0; let numTriangulos = 0; let indiceDeGrupo = -1; let hayGrupos = false;
+      let positions = []; let texcoords = []; let normals = [];
+      this.grupos = []; this.materiales = [];
+
+      for (let i=0;i<lineas.length;i++){
+        let cad = new Cadena(lineas[i]);
+        let token = cad.getToken();
+        if (token == null) continue;
+        switch(token){
+          case '#': continue;
+          case 'mtllib':
+            let nombreMTL = cad.getToken();
+            if (nombreMTL) this.lee_datos_archivo_mtl(nombreMTL);
+            break;
+          case 'v':
+            let x=cad.getFloat(), y=cad.getFloat(), z=cad.getFloat();
+            positions.push(x); positions.push(y); positions.push(z);
+            numVertices++;
+            minX=Math.min(minX,x); maxX=Math.max(maxX,x);
+            minY=Math.min(minY,y); maxY=Math.max(maxY,y);
+            minZ=Math.min(minZ,z); maxZ=Math.max(maxZ,z);
+            break;
+          case 'vt':
+            let u=cad.getFloat(), v=cad.getFloat();
+            texcoords.push(u); texcoords.push(v);
+            break;
+          case 'vn':
+            let nx=cad.getFloat(), ny=cad.getFloat(), nz=cad.getFloat();
+            normals.push(nx); normals.push(ny); normals.push(nz);
+            break;
+          case 'g':
+          case 'group':
+            let nombreGrupo = cad.getToken();
+            indiceDeGrupo = this.buscaGrupoPorNombre(nombreGrupo);
+            if (indiceDeGrupo == -1) { let g = new Grupo(); g.setNombre(nombreGrupo); this.grupos.push(g); indiceDeGrupo = this.grupos.length-1; }
+            hayGrupos = true;
+            break;
+          case 'usemtl':
+            let nombreMaterial = cad.getToken();
+            let indiceMaterial = this.buscaMaterial(nombreMaterial);
+            if (!hayGrupos){
+              indiceDeGrupo = this.buscaMaterialPorGrupo(indiceMaterial);
+              if (indiceDeGrupo == -1) { let g = new Grupo(); g.setNombre(nombreMaterial); this.grupos.push(g); indiceDeGrupo = this.grupos.length-1; }
+            }
+            this.grupos[indiceDeGrupo].setMaterial(indiceMaterial);
+            break;
+          case 'f':
+            if (indiceDeGrupo == -1) { let g = new Grupo(); g.setNombre("default"); this.grupos.push(g); indiceDeGrupo = this.grupos.length-1; }
+            let faceVerts = [];
+            let tkn = cad.getToken();
+            while (tkn != null) { faceVerts.push(tkn); tkn = cad.getToken(); }
+            let aToken = faceVerts[0];
+            for (let fi=1; fi<faceVerts.length-1; fi++){
+              let bToken = faceVerts[fi];
+              let cToken = faceVerts[fi+1];
+              this.grupos[indiceDeGrupo].adiTriangulo([aToken,bToken,cToken]);
+              numTriangulos++;
+            }
+            break;
+        }
+      }
+
+      let tam_max = Math.max(maxX-minX, Math.max(maxY-minY, maxZ-minZ));
+      let escala = tam_max === 0 ? 1 : 2.0 / tam_max;
+      for (let i=0;i<positions.length;i+=3){
+        positions[i  ] = escala * (positions[i  ] - minX) - 1.0;
+        positions[i+1] = escala * (positions[i+1] - minY) - 1.0;
+        positions[i+2] = escala * (positions[i+2] - minZ) - 1.0;
+      }
+
+      let vertexMap = {}; let nextIndex = 0;
+      this.posArray = []; this.uvArray = [];
+      this.indexArrays = []; this.groupMaterials = [];
+
+      for (let gi=0; gi<this.grupos.length; gi++){
+        let grupo = this.grupos[gi];
+        let triCount = grupo.getNumTriangulos();
+        let indicesList = [];
+        for (let t=0; t<triCount; t++){
+          let triTokens = grupo.getTriangulo(t);
+          for (let k=0;k<3;k++){
+            let tokenStr = triTokens[k].trim();
+            let parts = tokenStr.split('/');
+            let vi = parseInt(parts[0],10);
+            let vti = parts.length>1 && parts[1]!=="" ? parseInt(parts[1],10) : null;
+            let key = vi + "/" + (vti?vti:"") ;
+            if (vertexMap[key] === undefined){
+              let px = positions[(vi-1)*3], py = positions[(vi-1)*3+1], pz = positions[(vi-1)*3+2];
+              this.posArray.push(px,py,pz);
+              if (vti !== null && texcoords.length>0){
+                let tu = texcoords[(vti-1)*2], tv = texcoords[(vti-1)*2+1];
+                this.uvArray.push(tu, tv);
+              } else {
+                this.uvArray.push(0,0);
+              }
+              vertexMap[key] = nextIndex++;
+            }
+            indicesList.push(vertexMap[key]);
+          }
+        }
+        this.indexArrays.push(new Uint16Array(indicesList));
+        this.groupMaterials.push(grupo.getMaterial());
+      }
+
+      console.log(`OBJ procesado: ${nombreArchivo} -> vértices únicos: ${this.posArray.length/3}, grupos: ${this.indexArrays.length}`);
+    }
+
+    buscaGrupoPorNombre(nombre){ for(let i=0;i<this.grupos.length;i++) if(this.grupos[i].getNombre()===nombre) return i; return -1; }
+    buscaMaterial(nombre){ for(let i=0;i<this.materiales.length;i++) if(this.materiales[i].getNombre()===nombre) return i; return -1; }
+    buscaMaterialPorGrupo(indice){ for(let i=0;i<this.grupos.length;i++) if(indice==this.grupos[i].getMaterial()) return i; return -1; }
+
+    _createGLBuffers(gl){
+      this._posBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this._posBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.posArray), gl.STATIC_DRAW);
+
+      this._uvBuffer = gl.createBuffer();
+      gl.bindBuffer(gl.ARRAY_BUFFER, this._uvBuffer);
+      gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.uvArray), gl.STATIC_DRAW);
+
+      this._indexBuffers = [];
+      for (let i=0;i<this.indexArrays.length;i++){
+        let ib = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, ib);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, this.indexArrays[i], gl.STATIC_DRAW);
+        this._indexBuffers.push(ib);
+      }
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    }
+
+    _ensureMaterialTextureLoaded(gl, material){
+      if (!material) return null;
+      if (material.mapKd == null) return null;
+      if (material._glTexture) return material._glTexture;
+
+      let tex = gl.createTexture();
+      material._glTexture = tex;
+
+      let img = new Image();
+      img.crossOrigin = "";
+      img.onload = function(){
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        gl.pixelStorei(gl.UNPACK_FLIP_Y_WEBGL, true);
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, img);
+        function isPowerOf2(v){ return (v & (v-1)) === 0; }
+        if (isPowerOf2(img.width) && isPowerOf2(img.height)){
+          gl.generateMipmap(gl.TEXTURE_2D);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR_MIPMAP_LINEAR);
+        } else {
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+          gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+        }
+        gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+        gl.bindTexture(gl.TEXTURE_2D, null);
+      };
+      img.onerror = function(){ console.warn("No se pudo cargar textura:", material.mapKd); material._glTexture = null; };
+      img.src = "Modelos/" + material.mapKd;
+      return material._glTexture;
+    }
+
+    dibuja(gl, color) {
+      gl.bindBuffer(gl.ARRAY_BUFFER, this._posBuffer);
+      gl.enableVertexAttribArray(0);
+      gl.vertexAttribPointer(0, 3, gl.FLOAT, false, 0, 0);
+
+      gl.bindBuffer(gl.ARRAY_BUFFER, this._uvBuffer);
+      gl.enableVertexAttribArray(1);
+      gl.vertexAttribPointer(1, 2, gl.FLOAT, false, 0, 0);
+
+      for (let gi=0; gi<this.indexArrays.length; gi++){
+        let numIndices = this.indexArrays[gi].length;
+        let materialIndex = this.groupMaterials[gi];
+        let useTexture = 0;
+        let texture = null;
+        if (usarColoresOriginales && materialIndex >=0 && materialIndex < this.materiales.length){
+          let mat = this.materiales[materialIndex];
+          if (mat && mat.mapKd) {
+            texture = this._ensureMaterialTextureLoaded(gl, mat);
+            if (texture) useTexture = 1;
+          } else {
+            let dif = mat ? mat.getDifuso() : color;
+            gl.uniform4f(uColor, dif[0], dif[1], dif[2], 1);
+            useTexture = 0;
+          }
+        } else {
+          gl.uniform4f(uColor, color[0], color[1], color[2], 1);
+          useTexture = 0;
+        }
+
+        if (useTexture == 1 && texture) {
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, texture);
+          gl.uniform1i(uSampler, 0);
+          gl.uniform1i(uUseTexture, 1);
+        } else {
+          gl.uniform1i(uUseTexture, 0);
+        }
+
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, this._indexBuffers[gi]);
+        gl.drawElements(gl.TRIANGLES, numIndices, gl.UNSIGNED_SHORT, 0);
+      }
+
+      gl.disableVertexAttribArray(0);
+      gl.disableVertexAttribArray(1);
+      gl.bindBuffer(gl.ARRAY_BUFFER, null);
+      gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+    }
+  } // fin clase Objeto
+
+  function crearEjes(gl) {
+    const vertices = [-10,0,0, 10,0,0, 0,-10,0, 0,10,0, 0,0,-10, 0,0,10];
+    const colores = [1,0,0,1, 1,0,0,1, 0,1,0,1, 0,1,0,1, 0,0,1,1, 0,0,1,1];
+    const indices = [0,1, 2,3, 4,5];
+    return {
+      vertices: vertices, colores: colores, indices: indices,
+      dibujar: function(){
+        let codigoVertices = gl.createBuffer();
+        gl.bindBuffer(gl.ARRAY_BUFFER, codigoVertices);
+        gl.bufferData(gl.ARRAY_BUFFER, new Float32Array(this.vertices), gl.STATIC_DRAW);
+        gl.enableVertexAttribArray(0);
+        gl.vertexAttribPointer(0,3,gl.FLOAT,false,0,0);
+
+        let codigoDeIndices = gl.createBuffer();
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, codigoDeIndices);
+        gl.bufferData(gl.ELEMENT_ARRAY_BUFFER, new Uint16Array(this.indices), gl.STATIC_DRAW);
+
+        for (let i=0;i<3;i++){
+          const colorIndex = i*2;
+          gl.uniform4f(uColor, this.colores[colorIndex*4], this.colores[colorIndex*4+1], this.colores[colorIndex*4+2], this.colores[colorIndex*4+3]);
+          gl.drawElements(gl.LINES, 2, gl.UNSIGNED_SHORT, i*2*2);
+        }
+
+        gl.bindBuffer(gl.ARRAY_BUFFER, null);
+        gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, null);
+      }
+    };
+  }
+
+  function compilaEnlazaLosShaders(){
+    let vsSrc = document.getElementById("vs").text.trim();
+    let fsSrc = document.getElementById("fs").text.trim();
+    let vs = gl.createShader(gl.VERTEX_SHADER); gl.shaderSource(vs, vsSrc); gl.compileShader(vs);
+    if (!gl.getShaderParameter(vs, gl.COMPILE_STATUS)) console.error("VS:", gl.getShaderInfoLog(vs));
+    let fs = gl.createShader(gl.FRAGMENT_SHADER); gl.shaderSource(fs, fsSrc); gl.compileShader(fs);
+    if (!gl.getShaderParameter(fs, gl.COMPILE_STATUS)) console.error("FS:", gl.getShaderInfoLog(fs));
+    programaID = gl.createProgram(); gl.attachShader(programaID, vs); gl.attachShader(programaID, fs); gl.linkProgram(programaID);
+    if (!gl.getProgramParameter(programaID, gl.LINK_STATUS)) console.error("Program:", gl.getProgramInfoLog(programaID));
+    gl.useProgram(programaID);
+  }
+
+  function configurarProyeccion(){
+    const aspecto = gl.canvas.width / gl.canvas.height;
+    if (tipoVista === "perspectiva") perspective(MatrizProyeccion, 45, aspecto, 0.1, 100);
+    else ortho(MatrizProyeccion, -zoom*aspecto, zoom*aspecto, -zoom, zoom, -100, 100);
+    gl.uniformMatrix4fv(uMatrizProyeccion, false, MatrizProyeccion);
+  }
+
+  function configurarVista(){
+    identidad(MatrizVista);
+    rotacionY(MatrizVista, rotacionVistaY);
+    rotacionX(MatrizVista, rotacionVistaX);
+    traslacion(MatrizVista, 0, 0, -zoom);
+    gl.uniformMatrix4fv(uMatrizVista, false, MatrizVista);
+  }
+
+  function dibujar(){
+    gl.clear(gl.COLOR_BUFFER_BIT | gl.DEPTH_BUFFER_BIT);
+
+    if (controles.mostrarEjes.checked) {
+      identidad(MatrizModelo);
+      gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModelo);
+      ejes.dibujar();
+    }
+
+    identidad(MatrizModeloAuto);
+    traslacion(MatrizModeloAuto, posicionAuto.x, posicionAuto.y, posicionAuto.z);
+    rotacionZ(MatrizModeloAuto, rotacionAuto.z);
+    rotacionY(MatrizModeloAuto, rotacionAuto.y);
+    rotacionX(MatrizModeloAuto, rotacionAuto.x);
+    escalacion(MatrizModeloAuto, escalaAuto, escalaAuto, escalaAuto);
+    gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModeloAuto);
+    objetoAuto.dibuja(gl, colorAuto);
+
+    identidad(MatrizModeloGato);
+    traslacion(MatrizModeloGato, posicionGato.x, posicionGato.y, posicionGato.z);
+    rotacionZ(MatrizModeloGato, rotacionGato.z);
+    rotacionY(MatrizModeloGato, rotacionGato.y);
+    rotacionX(MatrizModeloGato, rotacionGato.x);
+    escalacion(MatrizModeloGato, escalaGato, escalaGato, escalaGato);
+    gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModeloGato);
+    objetoGato.dibuja(gl, colorGato);
+
+    identidad(MatrizModeloPinguino);
+    traslacion(MatrizModeloPinguino, posicionPinguino.x, posicionPinguino.y, posicionPinguino.z);
+    rotacionZ(MatrizModeloPinguino, rotacionPinguino.z);
+    rotacionY(MatrizModeloPinguino, rotacionPinguino.y);
+    rotacionX(MatrizModeloPinguino, rotacionPinguino.x);
+    escalacion(MatrizModeloPinguino, escalaPinguino, escalaPinguino, escalaPinguino);
+    gl.uniformMatrix4fv(uMatrizModelo, false, MatrizModeloPinguino);
+    objetoPinguino.dibuja(gl, colorPinguino);
+
+    if (animacionActiva) {
+      rotacionAuto.y = (rotacionAuto.y + INC_ROTACION) % 360;
+      rotacionGato.y = (rotacionGato.y + INC_ROTACION) % 360;
+      rotacionPinguino.y = (rotacionPinguino.y + INC_ROTACION) % 360;
+      controles.rotY.value = rotacionGato.y;
+    }
+
+    requestAnimationFrame(dibujar);
+  }
+
+  function cargarModelos(){
+    document.getElementById("status").textContent = "Cargando modelos...";
+    objetoAuto = new Objeto(gl, "Modelos/Car.obj", [1,0,0]);
+    objetoGato = new Objeto(gl, "Modelos/gato.obj", [1,0.53,0]);
+    objetoPinguino = new Objeto(gl, "Modelos/PenguinBaseMesh.obj", [0.1,0.1,0.1]);
+
+    // --- FORZAR texturas para gato y pinguino (si no vienen en el MTL) ---
+    // asigna mapKd en el primer material (si existe alguno), o crea uno nuevo
+    if (objetoGato.materiales.length === 0) {
+      let m = new Material(); m.setNombre("forcedGato"); m.mapKd = "texgato.jpg"; objetoGato.materiales.push(m);
+      // también asignar material al primer grupo si no hay
+      if (objetoGato.groupMaterials.length > 0) objetoGato.groupMaterials[0] = 0;
+    } else {
+      // si existe material pero no mapKd, lo ponemos
+      for (let i=0;i<objetoGato.materiales.length;i++){
+        if (!objetoGato.materiales[i].mapKd) objetoGato.materiales[i].mapKd = "texgato.jpg";
+      }
+    }
+
+    if (objetoPinguino.materiales.length === 0) {
+      let m2 = new Material(); m2.setNombre("forcedPinguino"); m2.mapKd = "texpingu.jpg"; objetoPinguino.materiales.push(m2);
+      if (objetoPinguino.groupMaterials.length > 0) objetoPinguino.groupMaterials[0] = 0;
+    } else {
+      for (let i=0;i<objetoPinguino.materiales.length;i++){
+        if (!objetoPinguino.materiales[i].mapKd) objetoPinguino.materiales[i].mapKd = "texpingu.jpg";
+      }
+    }
+
+    ejes = crearEjes(gl);
+    document.getElementById("status").textContent = "Listo";
+  }
+
+  function main(){
+    let canvas = document.getElementById("webglcanvas");
+    const devicePixelRatio = window.devicePixelRatio || 1;
+    canvas.width = canvas.clientWidth * devicePixelRatio;
+    canvas.height = canvas.clientHeight * devicePixelRatio;
+
+    gl = canvas.getContext("webgl2", {antialias:true, alpha:false});
+    if (!gl) { document.write("WebGL 2.0 no está disponible en tu navegador"); return; }
+    gl.viewport(0,0,gl.canvas.width, gl.canvas.height);
+
+    compilaEnlazaLosShaders();
+
+    uColor = gl.getUniformLocation(programaID, "uColor");
+    uMatrizProyeccion = gl.getUniformLocation(programaID, "uMatrizProyeccion");
+    uMatrizVista = gl.getUniformLocation(programaID, "uMatrizVista");
+    uMatrizModelo = gl.getUniformLocation(programaID, "uMatrizModelo");
+    uSampler = gl.getUniformLocation(programaID, "uSampler");
+    uUseTexture = gl.getUniformLocation(programaID, "uUseTexture");
+
+    configurarProyeccion();
+    configurarVista();
+
+    gl.enable(gl.DEPTH_TEST);
+    gl.clearColor(176/255, 196/255, 222/255, 1.0);
+
+    inicializarControles();
+    cargarModelos();
+    dibujar();
+  }
+
+  window.onload = main;
+  </script>
+
+</body>
+</html>
